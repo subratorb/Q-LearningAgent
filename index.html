@@ -1,1 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q-Learning Agent Simulator</title>
+    <!-- Tailwind CSS for modern, clean styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background */
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            grid-template-rows: repeat(5, minmax(0, 1fr));
+            gap: 0.25rem;
+        }
+        .grid-cell {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 0.8rem;
+            transition: all 0.3s ease-in-out;
+            position: relative;
+        }
+        .q-values {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            font-size: 0.6rem;
+            color: #d1d5db; /* Gray text for Q-values */
+            padding: 2px;
+            line-height: 1;
+        }
+        .q-value {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        .q-up { border-bottom: none; border-right: none; }
+        .q-down { border-top: none; border-right: none; }
+        .q-left { border-bottom: none; border-left: none; }
+        .q-right { border-top: none; border-left: none; }
+        
+        .start { background-color: #3b82f6; } /* Blue */
+        .goal { background-color: #22c55e; } /* Green */
+        .wall { background-color: #ef4444; } /* Red */
+        .jump-start { background-color: #f97316; } /* Orange */
+        .jump-end { background-color: #fcd34d; } /* Yellow */
+        .path { 
+            background-color: #f59e0b; /* Amber */
+            border: 2px solid #fbbf24;
+            box-shadow: 0 0 10px #f59e0b;
+        }
+        .current { 
+            background-color: #8b5cf6; /* Purple */
+            animation: pulse-ring 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .agent {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #fde047; /* Yellow */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            animation: pulse-agent 2s ease-in-out infinite;
+        }
+        .agent-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+        @keyframes pulse-agent {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 #8b5cf6; }
+            80% { box-shadow: 0 0 0 10px rgba(139, 92, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex flex-col items-center justify-center p-4 min-h-screen">
+
+    <div class="max-w-4xl mx-auto w-full">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-10">
+            <h1 class="text-3xl font-bold text-center mb-2">Q-Learning Grid World</h1>
+            <p class="text-center text-gray-400 mb-6">Watch an agent learn the optimal path to a goal using Q-learning.</p>
+
+            <!-- Main grid and controls area -->
+            <div class="flex flex-col md:flex-row items-center md:items-start justify-between">
+                
+                <!-- Grid Visualization -->
+                <div id="grid-container" class="grid-container w-full md:w-3/5 mb-6 md:mb-0 md:mr-6 bg-gray-700 rounded-lg p-2 shadow-inner relative">
+                    <!-- Grid cells and agent will be generated here by JavaScript -->
+                </div>
+
+                <!-- Control Panel & Stats -->
+                <div class="w-full md:w-2/5 flex flex-col space-y-4">
+                    <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+                        <h2 class="text-xl font-semibold mb-2">Controls</h2>
+                        <div class="flex flex-col space-y-2">
+                            <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300">Start Training</button>
+                            <button id="reset-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300">Reset</button>
+                            <button id="path-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300">Show Optimal Path</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+                        <h2 class="text-xl font-semibold mb-2">Learning Parameters</h2>
+                        <div class="space-y-2 text-sm text-gray-300">
+                            <p>Learning Rate ($\alpha$): <span id="alpha-val" class="font-mono">0.8</span></p>
+                            <p>Discount Factor ($\gamma$): <span id="gamma-val" class="font-mono">0.9</span></p>
+                            <p>Exploration Rate ($\epsilon$): <span id="epsilon-val" class="font-mono">1.0</span> (decays to 0.01)</p>
+                            <p>Episodes: <span id="episodes-val" class="font-mono">2000</span></p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-700 p-4 rounded-lg shadow-md">
+                        <h2 class="text-xl font-semibold mb-2">Training Status</h2>
+                        <div class="space-y-2 text-sm text-gray-300">
+                            <p>Current Episode: <span id="episode-counter" class="font-mono">0</span></p>
+                            <p>Total Steps: <span id="steps-counter" class="font-mono">0</span></p>
+                            <p>Final Reward: <span id="reward-val" class="font-mono">0</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Q-Table Display -->
+            <div id="q-table-display" class="mt-6 bg-gray-700 p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-2">Current Q-Values (hover over a cell)</h2>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- The Q-Learning Agent and Grid Logic -->
+    <script>
+        // --- Core Q-Learning Agent and Environment Logic (from Python code) ---
+        
+        // Constants for the grid and learning parameters
+        const GRID_SIZE = 5;
+        const START_POS = [1, 0];
+        const GOAL_POS = [4, 4];
+        const JUMP_START = [1, 3];
+        const JUMP_END = [3, 3];
+        const OBSTACLES = new Set([
+            [2, 2].toString(), 
+            [2, 3].toString(), 
+            [2, 4].toString(), 
+            [3, 2].toString()
+        ]);
+
+        // Rewards
+        const REWARD_GOAL = 10;
+        const REWARD_JUMP = 5;
+        const REWARD_STEP = -1;
+
+        // Q-Learning parameters
+        const LEARNING_RATE = 0.8;
+        const DISCOUNT_FACTOR = 0.9;
+        let epsilon = 1.0; 
+        const EPSILON_DECAY = 0.995;
+        const MIN_EPSILON = 0.01;
+        const EPISODES = 2000;
+        const MAX_STEPS_PER_EPISODE = 200;
+
+        // Actions: 0: Up, 1: Down, 2: Left, 3: Right
+        // Mapped from Python's 1-indexed N, S, E, W
+        const ACTIONS = [
+            [-1, 0], // Up (Python's North)
+            [1, 0],  // Down (Python's South)
+            [0, -1], // Left (Python's West)
+            [0, 1]   // Right (Python's East)
+        ];
+
+        // State variables
+        let qTable = {};
+        let currentState = [...START_POS];
+        let totalSteps = 0;
+        let episodeCounter = 0;
+        let isTraining = false;
+        let agentTimeout;
+        let agentElement;
+
+        // DOM elements
+        const gridContainer = document.getElementById('grid-container');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const pathBtn = document.getElementById('path-btn');
+        const episodeCounterEl = document.getElementById('episode-counter');
+        const stepsCounterEl = document.getElementById('steps-counter');
+        const rewardValEl = document.getElementById('reward-val');
+
+        /**
+         * Converts a state tuple [r, c] to a single index.
+         * @param {Array<number>} state
+         * @returns {number}
+         */
+        const stateToIndex = (state) => state[0] * GRID_SIZE + state[1];
+
+        /**
+         * Converts a state index to a state tuple [r, c].
+         * @param {number} index
+         * @returns {Array<number>}
+         */
+        const indexToState = (index) => [Math.floor(index / GRID_SIZE), index % GRID_SIZE];
+
+        /**
+         * The core environment step function, translated from Python.
+         * @param {Array<number>} state
+         * @param {number} actionIndex
+         * @returns {Array<any>} [nextState, reward, done]
+         */
+        const envStep = (state, actionIndex) => {
+            const [dr, dc] = ACTIONS[actionIndex];
+            const [r, c] = state;
+            let tentative = [r + dr, c + dc];
+            let reward = REWARD_STEP;
+            let done = false;
+
+            // Boundary check
+            if (tentative[0] < 0 || tentative[0] >= GRID_SIZE || tentative[1] < 0 || tentative[1] >= GRID_SIZE) {
+                return [state, reward, done];
+            }
+
+            // Obstacle check
+            if (OBSTACLES.has(tentative.toString())) {
+                return [state, reward, done];
+            }
+
+            // Jump logic
+            if (tentative[0] === JUMP_START[0] && tentative[1] === JUMP_START[1]) {
+                const next_state = [...JUMP_END];
+                reward = REWARD_JUMP;
+                done = (next_state[0] === GOAL_POS[0] && next_state[1] === GOAL_POS[1]);
+                return [next_state, reward, done];
+            }
+
+            const nextState = tentative;
+            if (nextState[0] === GOAL_POS[0] && nextState[1] === GOAL_POS[1]) {
+                reward = REWARD_GOAL;
+                done = true;
+            }
+
+            return [nextState, reward, done];
+        };
+
+        // --- UI and Visualization Logic ---
+        
+        /**
+         * Initializes the grid UI and agent element.
+         */
+        const createGridUI = () => {
+            gridContainer.innerHTML = ''; // Clear previous grid
+            const fragment = document.createDocumentFragment();
+
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                const cell = document.createElement('div');
+                const [r, c] = indexToState(i);
+                const isWall = OBSTACLES.has([r, c].toString());
+
+                cell.classList.add('grid-cell', 'rounded-lg', 'shadow-md', 'bg-gray-800');
+                cell.setAttribute('data-state-index', i);
+
+                // Set special cell styles
+                if (r === START_POS[0] && c === START_POS[1]) {
+                    cell.classList.add('start');
+                    cell.innerHTML = '<span class="text-white font-bold">START</span>';
+                } else if (r === GOAL_POS[0] && c === GOAL_POS[1]) {
+                    cell.classList.add('goal');
+                    cell.innerHTML = '<span class="text-white font-bold">GOAL</span>';
+                } else if (isWall) {
+                    cell.classList.add('wall');
+                    cell.innerHTML = '<span class="text-white font-bold">WALL</span>';
+                } else if (r === JUMP_START[0] && c === JUMP_START[1]) {
+                    cell.classList.add('jump-start');
+                    cell.innerHTML = '<span class="text-white font-bold">JUMP<br>→(4,4)</span>';
+                } else if (r === JUMP_END[0] && c === JUMP_END[1]) {
+                    cell.classList.add('jump-end');
+                    cell.innerHTML = '<span class="text-gray-900 font-bold">JUMP<br>END</span>';
+                }
+
+                // Create Q-value display
+                const qValuesDiv = document.createElement('div');
+                qValuesDiv.classList.add('q-values');
+                qValuesDiv.innerHTML = `
+                    <div class="q-value q-up"></div>
+                    <div class="q-value q-right"></div>
+                    <div class="q-value q-left"></div>
+                    <div class="q-value q-down"></div>
+                `;
+                cell.appendChild(qValuesDiv);
+                fragment.appendChild(cell);
+            }
+
+            gridContainer.appendChild(fragment);
+
+            // Create agent element
+            agentElement = document.createElement('div');
+            agentElement.classList.add('agent-container');
+            agentElement.innerHTML = '<div class="agent">🤖</div>';
+            gridContainer.appendChild(agentElement);
+
+            updateAgentPosition(START_POS);
+        };
+
+        /**
+         * Updates the position of the agent on the grid.
+         * @param {Array<number>} pos
+         */
+        const updateAgentPosition = (pos) => {
+            const [r, c] = pos;
+            const cellIndex = stateToIndex(pos);
+            const targetCell = gridContainer.querySelector(`[data-state-index="${cellIndex}"]`);
+            if (targetCell) {
+                targetCell.appendChild(agentElement);
+            }
+        };
+
+        /**
+         * Updates all Q-value displays on the grid.
+         */
+        const updateQValues = () => {
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                const cell = gridContainer.querySelector(`[data-state-index="${i}"]`);
+                if (!cell || OBSTACLES.has(indexToState(i).toString())) continue;
+                
+                const qValues = qTable[i] || { 0: 0, 1: 0, 2: 0, 3: 0 };
+                const qElements = cell.querySelectorAll('.q-value');
+
+                // Up, Down, Left, Right
+                qElements[0].textContent = qValues[0].toFixed(2);
+                qElements[3].textContent = qValues[1].toFixed(2);
+                qElements[2].textContent = qValues[2].toFixed(2);
+                qElements[1].textContent = qValues[3].toFixed(2);
+            }
+        };
+        
+        /**
+         * Resets the entire simulation.
+         */
+        const resetSimulation = () => {
+            clearTimeout(agentTimeout);
+            isTraining = false;
+            qTable = {};
+            currentState = [...START_POS];
+            totalSteps = 0;
+            episodeCounter = 0;
+            epsilon = 1.0;
+            
+            // Clear path highlights
+            const pathCells = document.querySelectorAll('.path');
+            pathCells.forEach(cell => cell.classList.remove('path'));
+
+            // Reset UI
+            episodeCounterEl.textContent = '0';
+            stepsCounterEl.textContent = '0';
+            rewardValEl.textContent = '0';
+            startBtn.textContent = 'Start Training';
+            startBtn.disabled = false;
+            pathBtn.disabled = false;
+
+            createGridUI();
+            updateQValues();
+        };
+
+        /**
+         * Main training loop to be called asynchronously.
+         */
+        const trainAgent = async () => {
+            if (!isTraining) return;
+
+            if (episodeCounter >= EPISODES) {
+                isTraining = false;
+                startBtn.textContent = 'Training Complete';
+                startBtn.disabled = true;
+                return;
+            }
+
+            let state = [...START_POS];
+            let done = false;
+            let steps = 0;
+            let episodeReward = 0;
+
+            const runEpisode = async () => {
+                if (steps >= MAX_STEPS_PER_EPISODE || done) {
+                    episodeCounter++;
+                    epsilon = Math.max(MIN_EPSILON, epsilon * EPSILON_DECAY);
+                    episodeCounterEl.textContent = episodeCounter;
+                    rewardValEl.textContent = episodeReward;
+                    
+                    if (isTraining) {
+                        agentTimeout = setTimeout(trainAgent, 50); // Delay before next episode
+                    }
+                    return;
+                }
+
+                const s_idx = stateToIndex(state);
+
+                // Initialize Q-values for current state if not present
+                if (!qTable[s_idx]) {
+                    qTable[s_idx] = { 0: 0, 1: 0, 2: 0, 3: 0 };
+                }
+
+                let actionIndex;
+                if (Math.random() < epsilon) {
+                    // Explore
+                    actionIndex = Math.floor(Math.random() * ACTIONS.length);
+                } else {
+                    // Exploit
+                    const qValues = Object.values(qTable[s_idx]);
+                    const maxQ = Math.max(...qValues);
+                    const bestActions = ACTIONS.filter((_, idx) => qTable[s_idx][idx] === maxQ);
+                    const actionTuple = bestActions[Math.floor(Math.random() * bestActions.length)];
+                    actionIndex = ACTIONS.findIndex(a => a[0] === actionTuple[0] && a[1] === actionTuple[1]);
+                }
+
+                // Python's action mapping is 1-indexed, we use 0-indexed for simplicity
+                const [nextState, reward, isDone] = envStep(state, actionIndex);
+                const ns_idx = stateToIndex(nextState);
+
+                // Update Q-table
+                const maxFutureQ = Math.max(...Object.values(qTable[ns_idx] || { 0: 0, 1: 0, 2: 0, 3: 0 }));
+                qTable[s_idx][actionIndex] += LEARNING_RATE * (reward + DISCOUNT_FACTOR * maxFutureQ - qTable[s_idx][actionIndex]);
+
+                state = nextState;
+                done = isDone;
+                steps++;
+                totalSteps++;
+                episodeReward += reward;
+
+                // Update UI
+                updateAgentPosition(state);
+                stepsCounterEl.textContent = totalSteps;
+                updateQValues();
+
+                agentTimeout = setTimeout(runEpisode, 10); // Control speed of step
+            };
+
+            await runEpisode();
+        };
+
+        /**
+         * Extracts the optimal policy from the Q-table.
+         * @returns {Object} A map of state indices to optimal action indices.
+         */
+        const extractPolicy = () => {
+            const policy = {};
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                const state = indexToState(i);
+                if (OBSTACLES.has(state.toString())) {
+                    policy[i] = null;
+                    continue;
+                }
+                const qValues = qTable[i];
+                if (!qValues) {
+                    policy[i] = null;
+                    continue;
+                }
+                const maxQ = Math.max(...Object.values(qValues));
+                const bestActionIndices = Object.keys(qValues).filter(key => qValues[key] === maxQ);
+                policy[i] = parseInt(bestActionIndices[0], 10);
+            }
+            return policy;
+        };
+        
+        /**
+         * Follows the optimal policy to find the best path.
+         * @param {Object} policy
+         * @returns {Array<Array<number>>} The optimal path as an array of [r, c] positions.
+         */
+        const followPolicy = (policy) => {
+            const path = [[...START_POS]];
+            let state = [...START_POS];
+            for (let i = 0; i < MAX_STEPS_PER_EPISODE; i++) {
+                const s_idx = stateToIndex(state);
+                const actionIndex = policy[s_idx];
+                if (actionIndex === null || (state[0] === GOAL_POS[0] && state[1] === GOAL_POS[1])) {
+                    break;
+                }
+                const [nextState, , done] = envStep(state, actionIndex);
+                path.push([...nextState]);
+                state = [...nextState];
+                if (done) break;
+            }
+            return path;
+        };
+
+        // --- Event Listeners ---
+        startBtn.addEventListener('click', () => {
+            if (!isTraining) {
+                isTraining = true;
+                startBtn.textContent = 'Training...';
+                trainAgent();
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            resetSimulation();
+        });
+
+        pathBtn.addEventListener('click', () => {
+            // Clear previous path
+            const pathCells = document.querySelectorAll('.path');
+            pathCells.forEach(cell => cell.classList.remove('path'));
+
+            const policy = extractPolicy();
+            const path = followPolicy(policy);
+            
+            // Highlight the new path
+            path.forEach(pos => {
+                const cellIndex = stateToIndex(pos);
+                const cell = gridContainer.querySelector(`[data-state-index="${cellIndex}"]`);
+                if (cell) {
+                    cell.classList.add('path');
+                }
+            });
+            updateAgentPosition(path[path.length - 1]);
+        });
+
+        // Initial setup
+        window.onload = () => {
+            createGridUI();
+            // Start agent at start position
+            const startCell = gridContainer.querySelector(`[data-state-index="${stateToIndex(START_POS)}"]`);
+            if (startCell) {
+                updateAgentPosition(START_POS);
+            }
+        };
+        
+    </script>
+</body>
+</html>
 
